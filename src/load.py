@@ -9,9 +9,16 @@ The important idea here is the *local row census*. Before anything touches
 Snowflake we count the lines in the source files ourselves and write that count
 to data/manifest.json. Every later assertion compares against that number.
 
-An expected row count typed in from a dataset description is faith. An expected
-row count derived from the file on disk is verification -- it is what catches a
-truncated download or a PUT that died at 80%.
+The value is not that a derived number is inherently more trustworthy. It is
+that it gets compared against something independent: the census is local truth
+off the disk, the per-file rows_loaded returned by COPY is remote truth, and
+asserting one against the other tests the transfer. That catches a PUT that
+died at 80%, a file that never uploaded, and a COPY that silently skipped a
+file it had already loaded.
+
+It does NOT catch a truncated download -- wc -l would faithfully count the
+short file and Snowflake would match it. Only the crude size floor below covers
+that, and only for files under 1 GB.
 """
 
 from __future__ import annotations
