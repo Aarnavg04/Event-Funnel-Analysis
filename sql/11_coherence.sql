@@ -1,0 +1,48 @@
+-- Phase 1 -- Funnel coherence.  WRITTEN BY HAND.
+--
+-- Question: does every purchase have a prior cart?  Measured two ways.
+--
+--   same session : does a cart for the SAME product exist earlier in the SAME
+--                  session?  This is coherence proper, and it decides whether
+--                  Phase 3 can compute a strict session-level funnel at all.
+--
+--   ever         : does a cart for the same product exist earlier ANYWHERE,
+--                  across sessions?  This is the user-level precursor.
+--
+-- The GAP between the two numbers is the finding: it quantifies how much of the
+-- funnel spans sessions rather than completing inside one.
+--
+-- Rules
+--   - match on the same PRODUCT_ID, not just any cart in the session
+--   - session identity = USER_SESSION (provisional; Phase 2 re-measures)
+--   - timestamp comparison uses <= ; second granularity means cart and purchase
+--     land in the same second often enough that strict < would inflate the
+--     violation rate with noise.  Count tie-only matches separately so we can
+--     see how big that effect is.
+--   - filter to cart + purchase before joining; views are 94.89% of the table
+--
+-- Output: ONE row
+--   total_purchases
+--   purchases_with_prior_cart_same_session
+--   purchases_with_prior_cart_ever
+--   purchases_matched_only_by_tie
+--   + derived rates
+--
+-- Self-checks before believing the result
+--   - total_purchases must equal 1,659,788.  Anything higher means the join
+--     multiplied rows -- a session with 3 carts for one product turning one
+--     purchase into 3.
+--   - same_session <= ever <= total_purchases.  If that ordering breaks, the
+--     join is wrong.
+--
+-- Two traps
+--   1. Row multiplication.  Collapse the cart side to at most one row per join
+--      key BEFORE joining.  Earliest or latest cart time -- work out which one
+--      actually answers "does a cart exist before this purchase".
+--   2. Putting the time comparison in WHERE instead of ON.  That turns a LEFT
+--      JOIN into an INNER JOIN, drops every purchase with no cart, and returns
+--      a coherence rate of 100%.
+
+
+-- your query below
+
