@@ -174,9 +174,59 @@ across the two months, price mix is one thing to decompose.
 
 ## Still open
 
-- **Funnel coherence is not yet measured** — the query is being written by hand.
-  Until it lands, Phase 1 is not complete and Phase 3's session-level funnel
-  definition is not settled.
+- Whether Phase 3 reports a strict sequential funnel at all. See coherence
+  below — the answer is probably no, and that is a decision to make explicitly.
 - Whether to backfill `brand` from each product's non-null rows. Now clearly
   *possible*; not yet decided.
 - The two-week lookback length, carried over from Phase 0.
+
+---
+
+## Funnel coherence — a third of purchases have no cart
+
+Query: `sql/11_coherence.sql`, written by hand.
+
+| | purchases | share |
+|---|---|---|
+| total | 1,659,788 | 100% |
+| prior cart, same session | 1,094,168 | **65.92%** |
+| prior cart, any earlier session | 1,149,955 | 69.28% |
+| matched only by a same-second tie | 0 | 0.00% |
+| no cart for that product anywhere | 455,527 | **27.44%** |
+
+**34.08% of purchases have no prior cart in the same session.** The strict
+`view -> cart -> purchase` sequence does not hold for a third of the data.
+
+Widening the definition to "carted at any earlier time, in any session" recovers
+only **3.36 percentage points**. So this is not people carting on Monday and
+buying on Tuesday — that behaviour exists but is small. The real story is that
+**27.44% of purchases have no cart event for that product at all**, in either
+month. The cart step is genuinely absent, not merely displaced in time.
+
+Two smaller observations:
+
+- **8,628 purchases happen before the earliest cart in their own session.** Bought,
+  then carted. Some of that is the pathological `user_session` tail — the minimum
+  gap is -37 days, inside a single "session", which is only possible because some
+  shipped sessions span weeks.
+- Median cart-to-purchase gap is **90 seconds**; p99 is 1,312 seconds (~22 min).
+
+**The tie rule turned out not to matter.** Decision (d) chose `<=` over `<` to
+stop same-second cart/purchase pairs inflating the violation rate. There are
+**zero** exact-second collisions in the data, and the 1st percentile of the gap
+is 9 seconds — the logger never writes both in the same second. `<` would have
+produced identical numbers. The decision was defensible in advance and turned
+out to be moot; recorded so it does not look load-bearing.
+
+**Changes the plan, and this is the big one.** Phase 3 cannot report a strict
+sequential session funnel as *the* funnel without discarding or mislabelling a
+third of purchases. The options:
+
+1. Report each step as *reached independently* — of sessions with a view, what
+   share had a cart; of sessions with a view, what share had a purchase — rather
+   than requiring the sequence.
+2. Report the strict sequential funnel **and** report the 34.08% bypass rate
+   beside it, so the number is readable rather than quietly wrong.
+
+Option 2 is more honest and more informative. Either way the choice has to be
+stated, because the two produce materially different conversion rates.

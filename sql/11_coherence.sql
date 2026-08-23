@@ -44,7 +44,6 @@
 --      a coherence rate of 100%.
 
 
--- Step 1 is boilerplate, so here is the shape. Everything below it is yours.
 
 WITH ev AS (
     -- 110M rows -> ~5.6M. Views are 94.89% of the table and irrelevant here.
@@ -55,9 +54,9 @@ WITH ev AS (
 
 purchases AS (
     -- your denominator. must come out to 1,659,788 rows.
-    SELECT ...
+    SELECT USER_ID, PRODUCT_ID, USER_SESSION, EVENT_TIME, EVENT_TYPE
     FROM ev
-    WHERE ...
+    WHERE EVENT_TYPE = 'purchase'
 ),
 
 -- STEP 3+4: two collapsed cart tables, one row per join key each.
@@ -67,21 +66,36 @@ purchases AS (
 -- question is asking: "does a cart exist before this purchase".
 
 cart_in_session AS (
-    SELECT ...
+    SELECT min(event_time) as earliest_cart_time,
+        PRODUCT_ID,
+        USER_SESSION,
+    from ev
+    WHERE event_type = 'cart'
+    group by USER_SESSION, PRODUCT_ID
 ),
 
 cart_ever AS (
-    SELECT ...
+    SELECT min(event_time) as earliest_cart_time,
+        USER_ID,
+        PRODUCT_ID,
+    from ev
+    WHERE event_type = 'cart'
+    group by user_id, PRODUCT_ID
 )
 
 -- STEP 5+6+7: LEFT JOIN purchases to both, then count.
 -- Time comparison goes in ON or in the counting, NOT in WHERE.
 SELECT
     COUNT(*)  AS total_purchases,
-    ...       AS purchases_with_prior_cart_same_session,
-    ...       AS purchases_with_prior_cart_ever,
-    ...       AS purchases_matched_only_by_tie
-FROM purchases p
-LEFT JOIN cart_in_session s ON ...
-LEFT JOIN cart_ever       e ON ...
+    COUNT(CASE WHEN s.earliest_cart_time <= p.EVENT_TIME then 1 else NULL END) 
+        AS purchases_with_prior_cart_same_session,
+    COUNT(CASE WHEN e.earliest_cart_time <= p.EVENT_TIME then 1 else NULL END)
+        AS purchases_with_prior_cart_ever,
+    COUNT(CASE WHEN s.earliest_cart_time = p.EVENT_TIME then 1 else NULL END) 
+        AS purchases_matched_only_by_tie
+FROM purchases as p
+LEFT JOIN cart_in_session as s 
+    ON p.PRODUCT_ID = s.PRODUCT_ID AND p.USER_SESSION = s.USER_SESSION
+LEFT JOIN cart_ever as e
+    ON p.PRODUCT_ID = e.PRODUCT_ID AND p.USER_ID = e.USER_ID
 ;
