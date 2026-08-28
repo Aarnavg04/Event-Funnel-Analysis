@@ -111,6 +111,149 @@ Snowflake and writes the counts to `data/manifest.json`. Every assertion in
 
 ---
 
+## Phase 1 — Data quality profile
+
+### 1.1 Duplicates measured, not deduplicated
+
+**Decision:** `sql/10_profile.sql` duplicates block. Cart: 71,966 groups,
+126,996 excess rows (3.21% of all cart events), largest group 78 identical
+rows. Purchase: 85 groups, 85 excess rows (0.005%). No rows removed from
+`EFA.RAW.EVENTS`.
+
+**Why measure rather than dedupe:**
+<!-- The dataset has no quantity column. What would deduping silently do to
+     revenue and purchase-volume numbers if a repeated purchase row actually
+     represented buying two of an item? --> We want to measure and not dedupe to not reduce the revenue of potential customers who had duplicate orders. There is no actual quantity column, so a repeated purchased row could indicate a customer bought two items. If we actually deduped we would silently remove the repeated purchase if someone bought two which would be changed to one. 
+
+**How my reasoning changed after measuring:**
+<!-- Before measuring, the concern was that dedup could undercount revenue.
+     The purchase duplicate rate came back at 0.005%. What does that do to the
+     strength of that original argument? What is the honest reason to keep
+     duplicates now, and is it the same reason I started with? --> The 0.005% purchase duplicate rate means the original revenue-protection argument doesn't hold much weight anymore. The honest reason to keep duplicates now is that they're negligible for purchases and I'd rather not modify raw data for that small an effect. 
+
+**What it costs:**
+<!-- Cart duplicates are 3.21%, not negligible. If a later metric counts cart
+     EVENTS (not just "did this session/user ever cart"), what does it need to
+     decide about that 3.21%? --> Due to the duplicates, we would have to decide whether to count raw cart vents or DISTINCT (session, product) carts, and that choice needs to be stated wherever cart counts shows up.
+---
+
+### 1.2 Session identity: `user_session`, provisional
+
+**Decision:** `session_integrity` block run against the shipped `USER_SESSION`
+column. 96.4% of sessions run 30 minutes or under; 819,408 (3.56%) exceed 30
+minutes; max duration 5,248,873s (60.7 days) against a 61-day dataset. 939
+sessions (0.004%) map to more than one `USER_ID`, max 3.
+
+**Why provisional:**
+<!-- Phase 2 computes sessions independently with a 30-minute rule. What is
+     the relationship between this measurement and that one -- what should the
+     comparison look like if the 30-minute rule is doing what it is supposed
+     to? --> As we currently know, USER_SESSION is a column the dataset was created with. To check this rule we would have to answer the question of whether it is possible for any single gap between two consecutive events inside a session to exceed 30 minutes if a session's total duration is 30 minutes or less. No, a gap inside a session can never exceed the session's own total duration. For example, if a session has three events at 10:00, 10:05, and 10:28 the total span of the session would be 28 minutes. No gap between two consecutive events in this session could ever be greater than that total session duration. Overall, this 30-minute-inactivity rule mathematically cannot split any of the 96.4% of sessions that already run 30 minutes or under. This measurement is against someone else's definition of how long a USER_SESSION should be and Phase 2 is where I discover if my own definition agrees. We should see in Phase 2 that the 96.4% should be unchanged and the other 819,408 get split into two or more separate sessions by the window function. 
+
+**What the multi-user sessions mean for how Phase 2 must be built:**
+<!-- 939 is tiny, but what does it prove about USER_SESSION as a key? If a
+     sessionization window function grouped by USER_SESSION alone instead of
+     by USER_ID, what would go wrong? -->  939 sessions mapping to more than one USER_ID indicate how USER_SESSION values aren't guaranteed unique to one user. 939 is tiny in count (0.004%) but not negligible in consequence, because each one silently corrupts two or three users' data with no signal that it happened.However, this proves that USER_SESSION cannot be partioned or used a primary key since the 939 sessions would pull together events from different people into one group. My lag would then compute a time gap between, two different people's event times who would have unrelated events which would be wrongly treated as consecutive activity by the same person. This would corrupt the session for both users at once, and also corrupt anything built on top of it such as funnel or retention. To fix this issue we should partition by USER_ID and never by USER_SESSION. 
+
+---
+
+### 1.3 Funnel coherence: matched on `product_id`, `MIN` not `MAX`
+
+**Decision:** `sql/11_coherence.sql`. Coherence tested per purchase against two
+collapsed cart tables -- same session + product, and same user + product,
+across any session -- each collapsed with `MIN(EVENT_TIME)`, compared with
+`<=`. Result: same-session 65.92%, any-session-ever 69.28%, no cart anywhere
+27.44%.
+
+**Why match on the same `product_id`, not just any cart in the session:**
+<!-- What weaker, less useful question would "any cart in the session" be
+     answering instead? --> Matching on the same product_id lets us compare the same product and not different products that were carted and then bought. For example, carting a bike but buying a toothbrush in the same session.
+
+**Why `MIN(EVENT_TIME)` and not `MAX`:**
+<!-- Walk through one session with a cart before the purchase AND a cart after
+     it. What does MAX get wrong there, and in which direction -- does it
+     over- or undercount real coherence? --> Imagine a sesison has three events. Carting the item at 10:00, purchashing it at 10:05, and carting the item at 10:10. The aggregate max function would report the 10:10 time and will fail under the purchases_with_prior_cart_same_session or purchases_with_prior_cart_ever since the time is after the purchase time. The min function acts as a safety net to make sure the cart time is before the purchase time. This purchase genuinely had a prior cart, MAX reports it as not coherent, so MAX would undercount which indicates real matches get lost, never invented.
+
+**What the result means:**
+<!-- Same-session and any-session-ever are only 3.36 points apart, but both
+     are far short of 100%. What does that gap (or lack of it) rule in or rule
+     out as the explanation for the missing third of purchases? --> The gap indicates that a third of users do not cart the item they are going to purchase at all and just purchase it. The gap of 3.36 is small, which indicates there is not that much of an increase from widenning the gap from the same session to earlier session ever. This result articulates how cross-session behavior like carting an item Monday and purchasing it Wednesday is a minor effect, and does not explain the missing third. Therefore, the 27.44% are seen not carting at all and just purchasing their items.
+
+---
+
+### 1.4 Tie rule: `<=`, turned out not to matter
+
+**Decision:** Chose `<=` over strict `<` so a cart and purchase landing in the
+same second would still count as coherent. Measured result: zero purchases
+matched only by a tie; the 1st-percentile cart-to-purchase gap is 9 seconds.
+
+**Why this turned out not to matter:**
+<!-- What does zero tie-only matches tell you about whether the logger ever
+     writes a cart and a purchase in the same second? --> This turned out not to matter since there were no instances of a user carting and purchasing an item in the same second. The fastest someone carted and purchased was 9 seconds which indicate that the decision to choose <= over < was not required.
+
+**Was the decision still worth making in advance, given it ended up moot:**
+<!-- You made this call before you had this data. Was that the wrong time to
+     make it? --> I initally made this decision as a harmless safety net to include potential users who would cart and purchase in the same second. Since I did not initally know the 9-second gap, I was guarding against a same-second collision since it was a reasonable preccaution. In addition, it has no additional cost since it is just a different operator. It is able to protect against a real category of risk which includes timestamp ties from any source such as network malfunctions, batched writes, and clock rounding. The fact that this dataset's logger turned out to be clean is what we were able to learn afterwards and not evidence the precaution was misguided.
+---
+
+### 1.5 Heavy tails and possible bots: report now, decide per metric later
+
+**Decision:** No exclusion rule applied anywhere in Phase 1. Distributions
+reported instead: 35.92% of sessions are single-event, session max 22,542
+sessions for one user, event max 22,929 events for one user.
+
+**Why per-metric rather than one blanket rule:**
+<!-- Different Phase 3+ metrics count different things -- session counts,
+     event counts, purchases. Why might the right exclusion threshold differ
+     between them, such that one rule applied now would be wrong for some of
+     them later? --> If we only have one blanket rule rather than a per-metric exclusion rule it would not be able to adapt to certain metrics and leave out critical data. For example, someone with 22,542 sessions is almost certainly a bot for a session-count metric, but that same person might still have made a handful of completely genuine purchases mixed in, therefore, excluding them from a purchase-based metric could throw away real revenue that a session-count exclusion rule would have correctly flagged as suspicious.
+
+**What the current evidence suggests about whether exclusion is even needed
+yet:**
+<!-- Is there evidence in the percentiles that the extreme tail is large
+     enough to distort a typical Phase 3 metric, or small enough to defer? --> The tail maxima of session max 22,542 sessions for one user and event max 22,929 events for one user are not substantial pieces of evidence even though having roughly 375 sessions a day for two straight months is very suspicious and most likely indicates a bot. Just because the max is extreme does not indicate most of the data is highly skewed since it doesn't yet establish whether they're common enough to distort a typical Phase 3 metric. 
+
+---
+
+### 1.6 Price profiled by `event_type`; `price = 0` treated as missing
+
+**Decision:** `price_by_type` run separately per event type rather than over
+the whole table. `price = 0` found in 252,203 views and 4,558 carts, and in
+**zero** of 1,659,788 purchases. 
+
+**Why split by event_type:**
+<!-- 94.89% of rows are views. What would a single whole-table price
+     distribution actually be measuring, versus what someone reading "price
+     distribution" would assume it measures? --> The main assumption is that if we just had the price distribution it would just give us what things cost from the customer's perspective. Since 94.89% of the whole-table aggregate are rows of views, the avg(price) would just give us the distirubtion of prices attached to things people looked at and not what they bought. It's mainly influenced by browsing behavior and not purchasing behavior. Splitting by event_type lets us see the price distribution by putchasing, carting, and browsing variations. In addition, once split by purchase event type, the purchasing distirbution will then accurately output the right data which won't be heavily influenced by viewing data. 
+
+**Why treat `price = 0` as missing rather than a genuine free item:**
+<!-- Zero purchases at price = 0, out of 1.66 million. If free items existed
+     and people could buy them, what would you expect that count to look like
+     instead? --> Suppose we genuinely meant this item was free rather than the price wasn't captured. If free items really existed in the catalog and people were free to buy them, would we expect the purcahse count at that price to look exactly zero forrever. Furthermore, "exactly zero" itself is informative since it's not just a free low number but the complete absence of an event type that should be trivially easy to trigger since free items are usually the easiest thing to get someone to buy. 
+
+---
+
+### 1.7 Phase 3 funnel definition: reach-based primary, coherence as caveat
+
+**Decision:** The Phase 3 session-level and user-level funnels report
+stage-reach (does a session/user have >=1 cart event, >=1 purchase event) as
+the primary metric, not the strict same-session product-matched sequence
+tested in 1.3. The coherence numbers (65.92% same-session, 27.44% no cart
+anywhere) are reported alongside as a disclosed caveat, not folded into the
+primary rate.
+
+**Why reach-based rather than strict sequential as the primary metric:**
+<!-- What would a strict, product-matched sequential funnel do to the reported
+     purchase-step conversion rate, given 1.3's numbers? Is that closer to or
+     further from what "share of sessions that purchased" should mean to
+     someone reading it? --> We utilize reach-based rather than strict sequential as the primary metric since 34.08% of purchases have no prior cart in the same session. If the funnel's "reached purchase" step required that same-session, same-product sequence then we wouldn't know what to do with that percentage of customers. Even though they're real purchases they wouldn't be highlighted and counted by the funnel since they never utilized the cart for that item in that session. Therefore, it makes the reported purchase-step rate further from what "share of sessions that purchased" should actually mean. 
+
+**Why not report reach-based alone, with no caveat:**
+<!-- If someone reads a funnel that just says "X% of sessions that carted went
+     on to purchase," what would they wrongly assume cart is doing for every
+     one of those purchases, given what 1.3 actually found? --> If someone reads a funnel that just proclaims "X% of sessions that carted went on to purchase," they would assume the cart causes or directly preceded the sale of an item. However, from 1.3 we know that 27.44% of purchases have no cart event for that product anywhere in the dataset, and 34.08% have none in the same session. Therefore, an impactful chunk of the purchases measured through our funnel are not actually preceded by the cart that we are crediting.
+---
+
 ## Open questions
 
 <!-- Anything I noticed but have not resolved. Phase 1 will add to this. -->
