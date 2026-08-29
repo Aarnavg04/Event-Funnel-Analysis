@@ -54,15 +54,24 @@
 
 -- your query below
 
-WITH gapped AS (
+WITH numbered AS (
+     SELECT
+        EVENT_TIME, EVENT_TYPE, PRODUCT_ID, CATEGORY_ID, CATEGORY_CODE,
+        BRAND, PRICE, USER_ID, USER_SESSION,
+        ROW_NUMBER() OVER (PARTITION BY USER_ID ORDER BY EVENT_TIME, EVENT_TYPE, PRODUCT_ID)
+            AS rn
+    FROM EFA.RAW.EVENTS
+),
+
+gapped AS (
     -- STEP 1: seconds since this user's previous event.
     -- DATEDIFF(second, <earlier>, <later>) -- mind the argument order, it is
     -- (unit, start, end) and getting it backwards gives negative gaps.
     SELECT
-        EVENT_TIME, EVENT_TYPE, PRODUCT_ID, CATEGORY_ID, CATEGORY_CODE,
-        BRAND, PRICE, USER_ID, USER_SESSION,
-        DATEDIFF(second, ..., ...) AS gap_seconds
-    FROM EFA.RAW.EVENTS
+        numbered.*,
+        DATEDIFF(second, lag(EVENT_TIME) over (partition by USER_ID order by rn),
+         EVENT_TIME) AS gap_seconds
+    FROM numbered
 ),
 
 flagged AS (
@@ -70,17 +79,20 @@ flagged AS (
     -- threshold. Remember what LAG did to the first event.
     SELECT
         gapped.*,
-        CASE WHEN ... THEN 1 ELSE 0 END AS is_new_10,
-        CASE WHEN ... THEN 1 ELSE 0 END AS is_new_30,
-        CASE WHEN ... THEN 1 ELSE 0 END AS is_new_60
+        CASE WHEN gap_seconds > 600 THEN 1 ELSE 0 END AS is_new_10,
+        CASE WHEN gap_seconds > 1800 THEN 1 ELSE 0 END AS is_new_30,
+        CASE WHEN gap_seconds > 3600 THEN 1 ELSE 0 END AS is_new_60
     FROM gapped
 )
 
 -- STEP 3: running total of the flags, per user, in time order.
 -- This is where the RANGE-vs-ROWS trap lives.
 SELECT
-    flagged.* EXCLUDE (is_new_10, is_new_30, is_new_60),
-    SUM(is_new_10) OVER (...) AS session_num_10,
-    SUM(is_new_30) OVER (...) AS session_num_30,
-    SUM(is_new_60) OVER (...) AS session_num_60
+    flagged.* EXCLUDE (is_new_10, is_new_30, is_new_60, rn),
+    SUM(is_new_10) OVER (partition by user_id order by rn 
+    rows between unbounded PRECEDING and current row) AS session_num_10,
+    SUM(is_new_30) OVER (partition by user_id order by rn 
+    rows between unbounded PRECEDING and current row) AS session_num_30,
+    SUM(is_new_60) OVER (partition by user_id order by rn 
+    rows between unbounded PRECEDING and current row) AS session_num_60
 FROM flagged

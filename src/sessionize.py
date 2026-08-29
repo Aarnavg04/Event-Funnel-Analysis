@@ -161,22 +161,31 @@ def compare(conn) -> None:
     print(f"    our sessions that MERGE   : {r[4]:>10,} of {r[3]:,} ({100*r[4]/r[3]:.2f}%)  max merged {r[5]}")
 
     # Phase 1 proved a shipped session <=30min cannot be split by a 30-min rule.
-    # This is that proof, checked against reality.
+    # This is that proof, checked against reality -- with one carve-out: 939
+    # shipped sessions span more than one USER_ID (finding 1.2), and since we
+    # partition by user those MUST land in different sessions of ours. That is
+    # the shipped column being wrong, not us. Excluded, and counted separately
+    # so the exclusion is visible rather than silent.
     r = run(
         conn,
         f"""
         WITH s AS (
           SELECT USER_SESSION,
                  DATEDIFF(second, MIN(EVENT_TIME), MAX(EVENT_TIME)) AS dur,
-                 COUNT(DISTINCT USER_ID || '-' || SESSION_NUM_30)   AS ours
+                 COUNT(DISTINCT USER_ID || '-' || SESSION_NUM_30)   AS ours,
+                 COUNT(DISTINCT USER_ID)                            AS users
           FROM {TABLE} WHERE USER_SESSION IS NOT NULL GROUP BY 1
         )
-        SELECT COUNT_IF(dur <= 1800), COUNT_IF(dur <= 1800 AND ours > 1) FROM s
+        SELECT COUNT_IF(dur <= 1800 AND users = 1),
+               COUNT_IF(dur <= 1800 AND users = 1 AND ours > 1),
+               COUNT_IF(dur <= 1800 AND users > 1 AND ours > 1)
+        FROM s
         """,
     )[0]
     ok = r[1] == 0
-    print(f"    [{'PASS' if ok else 'FAIL'}] shipped sessions <=30min never split: "
+    print(f"    [{'PASS' if ok else 'FAIL'}] single-user shipped sessions <=30min never split: "
           f"{r[1]:,} violations out of {r[0]:,}")
+    print(f"           ({r[2]:,} multi-user shipped sessions split, which is correct)")
 
     # Decision (a): what the threshold actually costs you.
     print("\n  --- session-level conversion by threshold (decision a) ---")
