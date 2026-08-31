@@ -254,6 +254,73 @@ primary rate.
      one of those purchases, given what 1.3 actually found? --> If someone reads a funnel that just proclaims "X% of sessions that carted went on to purchase," they would assume the cart causes or directly preceded the sale of an item. However, from 1.3 we know that 27.44% of purchases have no cart event for that product anywhere in the dataset, and 34.08% have none in the same session. Therefore, an impactful chunk of the purchases measured through our funnel are not actually preceded by the cart that we are crediting.
 ---
 
+## Phase 2 — Sessionization
+
+
+### 2.1 30-minute inactivity rule, with 10 and 60 measured alongside
+
+**Decision:** `sql/20_sessionize.sql`. Sessions cut on a gap strictly greater
+than 1800 seconds, partitioned by `USER_ID`. 10- and 60-minute variants computed
+in the same pass. Session-level purchase conversion: 6.44% @10min, 6.86%
+@30min, 7.02% @60min -- a 9% relative swing. Session counts: 20,495,962 /
+18,756,054 / 17,987,818.
+
+**Why measure the sensitivity instead of calling 30 minutes a convention:**
+<!-- 30 minutes is inherited from Google Analytics, not derived from this data.
+     The sensitivity table turns that from an admission into a demonstrated
+     claim. What does the 6.44% -> 7.02% swing prove about what a session-level
+     conversion rate IS, and what does that imply about reporting one without
+     stating the threshold? Connect it to why Phase 3 also reports a
+     user-level funnel. --> Even though the 30 minute session time is the standard as seen from Google Analytics, I wanted to test other session times such as 10 minutes and 60 minutes to compare and contrast between the session conversion rates and the session counts for all of the different session variations. This allows the sensitivity findings to convert from an  admission into a demonstrated claim. Since the relative swing is 9% we can conclude that the session conversion rate is sensitive to increases in the session duration. Furthermore, the swing proves that the session-level rate is partly an artifact of a modeling choice, and not purely a measurement of behavior since two different people using different thresholds would report different "true" conversion rates for the identical underlying data. The connection to the user-level funnel is that the user-level rate (13.12%) is invariant to this threshold entirely since no session boundary is involved. Furthermore, the session-level number is useful but threshold-dependent the user-level number is the metric I would trust for a claim of the conversion rate increasing an X amount.
+
+---
+
+### 2.2 Our sessions vs the shipped `user_session`
+
+**Decision:** 18,756,054 sessions at 30 minutes against 23,016,650 shipped --
+18.51% fewer. We split 407,943 shipped sessions (1.77%); 2,917,102 of ours
+(15.55%) merge two or more shipped ones, up to 1,705 in one case. Zero
+single-user shipped sessions of <=30 minutes were split. The shipped column cuts
+new sessions after gaps as short as 176 seconds.
+
+**Why the count fell, and what that says about what `user_session` actually is:**
+<!-- Finding 1.2 predicted splitting and that was wrong. Explain how the count
+     can drop 18.51% while zero short sessions are split -- the two checks
+     measure opposite operations. Then: if the shipped column starts a new
+     session after 176 seconds of inactivity, what is it more likely tracking
+     than a browsing session? This is the "why do my sessions differ from
+     theirs" answer I have to give unaided. -->  When one shipped session splits into two, the split adds one session count to the total. When two shipped sessions merge into one, the total count will decrease by 1 since the two separate sessions are combined into 1 session. Therefore the net effect is negative, since merges vastly outnumber splits. Our data proved that 15.55% sessions were actually merged. The number of sessions actually split were 1.77%. If the shipped column starts a new session after 176 seconds of inactivity, it is more likely tracking a single page visit or a browser tab rather than a browsing session. Some session-tracking systems mint a new session ID on things like a new tab, a referrer change, or a technical page-load event, not on the shopper actually going away.
+
+---
+
+### 2.3 `ROW_NUMBER` tiebreaker -- supersedes decision (d)
+
+**Decision:** Both `LAG` and `SUM` order by a `ROW_NUMBER()` surrogate computed
+once per user, not by `EVENT_TIME`. Before this fix, 500 sessions contained gaps
+of up to 2,843,526 seconds (33 days). Session counts and conversion rates were
+identical before and after.
+
+**Why ties needed a tiebreaker after all:**
+<!-- Decision (d) said no tiebreaker was needed: tied events have a zero gap
+     between them so they land in the same session whichever order the sort
+     picks. That reasoning contained a hidden assumption about LAG and SUM.
+     Name the assumption, say why it is false, and trace what happened to the
+     cart at 2019-11-11 19:36:03. Then: the aggregates did not move at all --
+     does that make it a real bug or not? --> Ties needed a tiebreaker after all since the window functions LAG and SUM can vary on which rows they order on ties. I initially assumed that SQL would consistently order the rows for both the window functions however, after running the function I found this to be false. I had to assign a row number to each row in order to get rid of ties and keep the LAG and SUM windows consistent. Furthermore, the actual cart at 2019-11-11 19:36:03 has LAG treat view coming after cart in its ordering, causing view to look back across 33 days and raising a new-session flag. SUM processed the pair in the opposite order having cart first before the running total had incremented. This caused cart to stay in the old session while view started the new one. Since the aggregates did not move at all, the error was too small to be noticed and to shift a summary number. However, this would still be considered a real bug even if it doesn't noticeably affect the aggregates since 500 rows that show continuous sessions are still considered to be bugs and not correct.
+
+---
+
+### 2.4 Materialized, not recomputed
+
+**Decision:** `EFA.ANALYTICS.EVENTS_SESSIONIZED`, 109,950,743 rows, built in
+66 seconds.
+
+**Why materialize:**
+<!-- What is the expensive part of this query, how many later phases need
+     sessions, and what would recomputing cost across all of them? --> The expensive part of this query which was shown to us from the build log was sorting the 110M rows by user_id, event_time. Sorting is generally a costly operation since sorting at this scale on an X-small will cause the data to be put on disks causing every downstream query that recomputed the window function from scratch to pay the same cost for sorting again in full. Since phases 3, 4, and 5 all need session boundaries, materializing the data in this phase and not every time for each phase saves us cost. Since the sorting took 66 seconds once, having to rerun the sort for the future phases instead of reading a plain table will cause us to pay the 66-second sort three additional times. Suppose we added an ad-hoc query along the way that touches the sessions, we would have to pay additional costs for every fix. Materializing turns a repeated expensive operation into a one-time cost plus cheap reads afterwards. 
+
+---
+
 ## Open questions
 
 <!-- Anything I noticed but have not resolved. Phase 1 will add to this. -->
