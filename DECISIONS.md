@@ -321,6 +321,91 @@ identical before and after.
 
 ---
 
+## Phase 3 — The funnel
+
+
+### 3.1 Category grain: (session, category_code), not session
+
+**Decision:** `category_funnel` computed at (session, category_code) pairs.
+NULLs coalesced to `(uncategorized)`. 130 distinct category values. Self-checks
+passed: summed per-category sessions (24,894,758) exceed the 18,747,465 base;
+`(uncategorized)` is 29.35% of that sum, matching the row-level 32.21% null
+rate in order of magnitude.
+
+**Why this grain, and why the "exceeds the base" self-check is proof the grain
+is right rather than a red flag:**
+<!-- Name the concrete failure this avoids: a session viewing electronics and
+     furniture but only purchasing furniture, tagged by whole-session outcome.
+     Then explain why summed per-category counts SHOULD exceed the single-
+     session base -- what would it mean if they didn't? --> If you tagged a session's whole outcome onto every category it touched, a session that carted furniture+electronics but purchased only furniture would wrongly show a purchase in the electronics funnel too, inflating electronics' apparent conversion with a sale that never happened there. The category_funnel grain fixes this problem by separating them and only showing the category that was actually purchased a different row. Since we are now summing on per-category counts, users will have multiple items from different categories which will be counted in different rows causing the overall count to exceed the single session base. If they did not exceed it wouuld prove that customers are strictly stick to one category. 
+
+---
+
+### 3.2 Largest absolute loss on the full pipeline, not the largest rate
+
+**Decision:** All three transitions (view->cart, cart->purchase,
+view->purchase) reported as both rate and absolute count, per category.
+Headline = largest absolute count lost on view->purchase. Result:
+electronics.smartphone, 5,740,299 lost -- the largest of any named category.
+
+**Why absolute loss on the full pipeline, not the largest rate:**
+<!-- Somewhere in the 130 categories is one with a near-100% loss rate on a
+     few hundred sessions. Why does electronics.smartphone matter more for a
+     PM's roadmap than that category does, even though its rate is worse? --> Using absolute loss on the full pipeline rather than the largest rate is important for categories within the 130 that have a few hundred sessions since they will output close to a 100% loss rate and a rate-based ranking would put them at the top, wrongly, ahead of categories that actually matter more. In regard to smartphones for the electronics category, even if the actual rate of the category is moderate, focusing on the 5,740,299 lost sessions can help the PM make improvements in conversion where absolute revenue can actually move than completely fixing a tiny category with 200 lost sessions but a near 100% loss rate. Since 5,740,299 is roughly 28,700 times larger than 200, a PM's roadmap would target the smartphones over the other tiny category.
+
+---
+
+### 3.3 User-level period: whole window AND by month
+
+**Decision:** Whole-window reproduces the Phase 1 census exactly
+(697,470/5,316,649, 13.12%). By-month split found October inverted -- 347,118
+purchasers vs 337,117 carters -- while November was not (441,638 vs 826,323).
+Four independent checks confirmed this is real, not a bug: DATE_TRUNC
+boundaries are correct, raw event counts show the same shape bypassing the
+query entirely, an independent no-CTE query reproduces identical numbers, and
+41.6% of October's purchasers (144,341 of 347,118) had zero cart events all
+month. Oct+Nov totals (6,718,407) exceed the whole-window total (5,316,649) by
+1,401,758 -- users active in both months.
+
+**Explain the October inversion, and why the by-month totals summing higher
+than the whole-window total is correct, not a bug:**
+<!-- The 41.6%-no-cart mechanism, why October specifically given the dataset's
+     start date (2019-10-01, no prior history), and why November flips. Then:
+     what does it mean for "users active in a period" to overlap across
+     periods when "users active in the whole window" is one fixed population? --> The October Inversion was caused since the dataset had no previous history and started on 2019-10-01. In addition, 41.6% of October's purchasers had no cart event at all for any product. The innate cause of this can be due to a share of that 41.6% of customers already being pre-existing customers of the store before October that were not shown in the data. In addition, Phase 0's lookback decision was built around people who already knew what they wanted to and bought directly with no need to browse or cart first since the data just started watching these customers mid way and not when the store started their business. November flips since Black Friday brings a wave of new traffic that browses and adds to cart heavily without converting at the same pace, causing the cart-reach far ahead of purchase-reach showcasing the opposite pattern of October. The overlap is correct and not a bug since users active in October and users active in November are two separate, independently defined groups that are allowed to share members where an active user can be in both months. Users active in the whole window are different since a single group by definition is one row per user. Since October and November can share members while the whole-window count can't, summing two overlapping groups will naturally produce a total that's larger than one non-overlapping group — and that's exactly what the 1,401,758 gap is: the count of people counted twice. 
+
+---
+
+### 3.4 Session-level vs user-level: which for which decision
+
+**Decision:** The spec requires stating which funnel a PM should use for which
+decision. Session-level purchase rate is 6.86% at 30 minutes, and Phase 2
+proved this number moves 6.44%->7.02% purely from the sessionization
+threshold. User-level (13.12%) carries no such dependency.
+
+**Write the actual guidance -- this goes in the README:**
+<!-- Given the threshold-sensitivity from Phase 2, argue which metric a PM
+     should reach for to track week-over-week internal trend, and which one
+     they should reach for to state a headline conversion rate or compare
+     against any external/competitor number. Say why the other one is the
+     wrong tool for that specific job. -->When it comes to tracking a week-over-week internal trend, a PM would be more inclined to utilize the session level since they can actually detect the affect of their interventions on the scale of a single visit. The 30-minute threshold also stays fixed across every week. Even though the session level is sensitive to the threshold, it does not matter as long as the methodology doesn't change. The week-over-week movement is still apparent even if the absolute value is partly an artifact of the convention. In addition, this only holds if nobody quietly changes the sessionization rule mid-comparison. In regards to stating a headline conversion rate, or comparing against a competitor's published number, the user-level rate should be utilized. This rate carries zero dependency on a threshold nobody outside your team has agreed to, making it also useful to an external audience. Session-level would be the wrong tool here since it depends on the threshold you choose. User-level for week-over-week internal trend would fail since it is too coarse and it does not explicitly tell the PM where in a visit people drop off, only whether they ever converted, not depending on the number of sessions. Session-level for external/competitor number is dishonest since it quotes 6.86% without saying "at 30 minutes" because it implies a precision the number doesn't have.
+
+---
+
+### 3.5 Zero-view sessions: footnoted, not dropped
+
+**Decision:** Checked before building (per your call to verify rather than
+assume). 8,589 sessions (0.046%) have cart/purchase activity with no logged
+view; 4,437 of those have a purchase. Excluded from the funnel base (base =
+sessions with >=1 view, per the spec's own phrasing) and reported as a
+separate footnote rather than silently dropped.
+
+**What footnoting instead of silently dropping actually buys you here:**
+<!-- 0.046% will not move any headline number. So what is the footnote
+     actually for -- what would change about this project's credibility if a
+     reader found these 8,589 sessions themselves and noticed they were never
+     mentioned? --> Instead of silently dropping these zero-view sessions, footnoting them allows us to explain this gap and builds the reader's trust. If someone finds 8,589 sessions with real purchase activcity and no views that never appear anywhere in my funnel, they will be skeptical to my findings and will wonder if "that's negligible." They will also wonder, "what else I did not account or check for?" Leaving this gap allows the reader to doubt my other results in the report even if they were verifiable and are accurate. The footnote displays how I found these sessions and understood how they are purchased items likely from a deep link or missing tracking event. A silently-dropped 0.046% is faith that it didn't matter. A footnoted 0.046% is verification that it doesn't, which is worth more to my credibility than the number itself.
+
 ## Open questions
 
 <!-- Anything I noticed but have not resolved. Phase 1 will add to this. -->
