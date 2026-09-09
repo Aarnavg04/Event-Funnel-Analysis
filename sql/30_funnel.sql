@@ -42,7 +42,27 @@
 --     assume it -- a session can purchase without cart, so THIS INVARIANT MAY
 --     NOT HOLD. Think about whether it should before asserting it.)
 
--- your query below
+WITH sessions AS (
+    SELECT 
+        USER_ID,
+        SESSION_NUM_30,
+        COUNT(*) as n_events,
+        COUNT_IF(EVENT_TYPE = 'view') > 0 AS has_view,
+        COUNT_IF(EVENT_TYPE = 'cart') > 0 AS has_cart,
+        COUNT_IF(EVENT_TYPE = 'purchase') > 0 AS has_purchase
+    FROM EFA.ANALYTICS.EVENTS_SESSIONIZED
+    GROUP BY USER_ID, SESSION_NUM_30
+
+)
+
+SELECT
+    COUNT(*) AS sessions_with_view,
+    COUNT_IF(has_cart) AS reached_cart,
+    COUNT_IF(has_purchase) AS reached_purchase,
+    COUNT_IF(n_events = 1) AS single_event_sessions
+FROM sessions
+WHERE has_view
+
 
 
 -- name: user_funnel
@@ -58,7 +78,66 @@
 -- 697,470 of 5,316,649 users ever purchase, 13.12%. If it doesn't match
 -- exactly, this query has a bug, not a new finding.
 
--- your query below
+WITH users AS (
+    SELECT 
+        USER_ID,
+        COUNT_IF(EVENT_TYPE = 'cart') > 0 AS has_cart,
+        COUNT_IF(EVENT_TYPE = 'purchase') > 0 AS has_purchase
+    FROM EFA.RAW.EVENTS
+    GROUP BY USER_ID
+)
+
+SELECT
+    COUNT(*) AS total_users,
+    COUNT_IF(has_cart) AS reached_cart,
+    COUNT_IF(has_purchase) AS reached_purchase
+FROM users
+
+
+-- name: user_funnel_by_month
+-- Decision (b), second half: same question, split by month instead of over
+-- the whole window. This is what Phase 5 (what moved, and why) will read from.
+--
+-- Structure: identical to user_funnel above, but DATE_TRUNC('month',
+-- EVENT_TIME) joins USER_ID in the GROUP BY, both in the CTE and in the
+-- final aggregation. That is the only change -- same has_cart / has_purchase
+-- logic, one more grouping column.
+--
+-- A user active in both October and November now produces TWO rows in the
+-- CTE, one per month, each independently flagged from only that month's
+-- events. Do not carry a user's cart/purchase status across months -- a user
+-- who carted in October and purchased in November should NOT show a
+-- purchase against October, or a cart against November.
+--
+-- Expected output: exactly two rows, one per month.
+--
+-- Self-check -- think about this BEFORE running it, it will not self-verify
+-- the way the whole-window query did:
+--   Oct's total_users + Nov's total_users will NOT equal 5,316,649, and
+--   neither month's total_users will equal it either. A user active in both
+--   months is counted in BOTH rows. This is correct, not a bug -- be ready to
+--   say why "users active in October" and "users active in November" are
+--   allowed to overlap when "users active in the whole window" is a single
+--   fixed population.
+
+WITH users_by_month AS (
+    SELECT
+        USER_ID,
+        DATE_TRUNC('month', EVENT_TIME) AS month,
+        COUNT_IF(EVENT_TYPE = 'cart') > 0 AS has_cart,
+        COUNT_IF(EVENT_TYPE = 'purchase') > 0 AS has_purchase
+    FROM EFA.RAW.EVENTS
+    GROUP BY USER_ID, DATE_TRUNC('month', EVENT_TIME)
+)
+
+SELECT
+    month,
+    COUNT(*) as total_users,
+    COUNT_IF(has_cart) AS reached_cart,
+    COUNT_IF(has_purchase) AS reached_purchase
+FROM users_by_month
+GROUP BY month
+ORDER BY month
 
 
 -- name: category_funnel
@@ -97,3 +176,29 @@
 --     null rate (not exact -- sessions vs rows -- but same order of magnitude)
 
 -- your query below
+
+WITH session_category AS (
+    SELECT
+        USER_ID,
+        SESSION_NUM_30,
+        COALESCE(CATEGORY_CODE, '(uncategorized)') as category_code,
+        COUNT_IF(EVENT_TYPE = 'view') > 0 AS has_view,
+        COUNT_IF(EVENT_TYPE = 'cart') > 0 AS has_cart,
+        COUNT_IF(EVENT_TYPE = 'purchase') > 0 AS has_purchase
+    FROM EFA.ANALYTICS.EVENTS_SESSIONIZED
+    GROUP BY USER_ID, SESSION_NUM_30, COALESCE(CATEGORY_CODE, '(uncategorized)')
+)
+
+
+SELECT
+    category_code,
+    COUNT(*) AS sessions_with_views,
+    COUNT_IF(has_cart) AS reached_cart,
+    COUNT_IF(has_purchase) AS reached_purchase,
+    sessions_with_views - reached_cart AS lost_view_to_cart,
+    reached_cart - reached_purchase AS lost_cart_to_purchase,
+    sessions_with_views - reached_purchase AS lost_view_to_purchase
+FROM session_category
+WHERE has_view
+GROUP BY category_code
+ORDER BY lost_view_to_purchase DESC;
