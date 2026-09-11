@@ -404,26 +404,34 @@ separate footnote rather than silently dropped.
 <!-- 0.046% will not move any headline number. So what is the footnote
      actually for -- what would change about this project's credibility if a
      reader found these 8,589 sessions themselves and noticed they were never
-     mentioned? --> Instead of silently dropping these zero-view sessions, footnoting them allows us to explain this gap and builds the reader's trust. If someone finds 8,589 sessions with real purchase activcity and no views that never appear anywhere in my funnel, they will be skeptical to my findings and will wonder if "that's negligible." They will also wonder, "what else I did not account or check for?" Leaving this gap allows the reader to doubt my other results in the report even if they were verifiable and are accurate. The footnote displays how I found these sessions and understood how they are purchased items likely from a deep link or missing tracking event. A silently-dropped 0.046% is faith that it didn't matter. A footnoted 0.046% is verification that it doesn't, which is worth more to my credibility than the number itself.
+     mentioned? --> Instead of silently dropping these zero-view sessions, footnoting them allows us to explain this gap and builds the reader's trust. If someone finds 8,589 sessions with real purchase activity and no views that never appear anywhere in my funnel, they will be skeptical to my findings and will wonder if "that's negligible." They will also wonder, "what else did I not account or check for?" Leaving this gap allows the reader to doubt my other results in the report even if they were verifiable and are accurate. The footnote displays how I found these sessions and understood how they are purchased items likely from a deep link or missing tracking event. A silently-dropped 0.046% is faith that it didn't matter. A footnoted 0.046% is verification that it doesn't, which is worth more to my credibility than the number itself.
 
 ## Open questions
 
 <!-- Anything I noticed but have not resolved. Phase 1 will add to this. -->
 
-**Is a two-week lookback long enough?** Per-day first-seen users decline
-monotonically through October -- 141,952, 107,732, 88,242, 78,289, 66,122 --
-and have not flattened by 2019-10-15 where cohorts start. That decline is the
-pre-existing user pool draining, so cohorts 1 through 3 still carry
-contamination. Extending the lookback to all of October would clean them up but
-leaves roughly 4 cohorts with a 4-week horizon, all inside Black Friday. With
-two months of data I cannot have both clean cohorts and a usable horizon.
-UNDECIDED -- this shapes Phase 4.
+**RESOLVED -- two-week lookback stays at 2 weeks, not extended.** Per-day
+first-seen users decline monotonically through October -- 141,952, 107,732,
+88,242, 78,289, 66,122 -- and have not flattened by 2019-10-15 where cohorts
+start, so cohorts 1 through 3 still carry contamination from pre-existing
+customers. Extending to 4 weeks would clean that up but pushes cohort
+formation into November, which is worse: first-seen counts rise again there
+(Black Friday acquisition), and a 4-week lookback would collapse the whole
+cohort study into ~4 cohorts sitting entirely inside that spike, with almost
+no clean horizon left. Phase 3's finding that 41.6% of October's purchasers
+had zero cart activity all month is corroborating evidence the contamination
+is real, not just a curve shape. Decision: keep 2 weeks (6 cohorts, 5-week
+max horizon), and flag cohorts 1-3 explicitly in the Phase 4 retention matrix
+as carrying known residual contamination, rather than trading it for a worse,
+Black-Friday-dominated problem.
 
-**`brand` is not a stable attribute of `product_id`.** 19,821 products (9.58%)
-appear both branded and blank. If Phase 3 breaks drop-off down by brand I need
-a rule -- backfill each product's brand from its non-null rows, take the mode,
-or leave it -- and 15,331,243 events currently have no brand to group by.
-Whether `category_code` (32.2% null) behaves the same way is unchecked.
+**RESOLVED -- `brand` backfill deferred, not needed.** 19,821 products (9.58%)
+appear both branded and blank -- a genuine capture failure, confirmed
+backfillable via mode/first-non-null-value if ever needed. But nothing in
+Phases 3 or 4 uses `brand` as a grouping dimension -- Phase 3's category
+breakdown used `category_code` instead, and Phase 4 does not touch brand at
+all. Revisit only if Phase 5's diagnostic ends up wanting a brand-level cut of
+whatever metric moved; the fix is already known and cheap if that happens.
 
 **The gate cannot detect a partially truncated download.** See 0.5. The size
 floor rejects a file under 1 GB; a file truncated at 95% passes every check.
