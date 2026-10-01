@@ -415,15 +415,17 @@ first-seen users decline monotonically through October -- 141,952, 107,732,
 88,242, 78,289, 66,122 -- and have not flattened by 2019-10-15 where cohorts
 start, so cohorts 1 through 3 still carry contamination from pre-existing
 customers. Extending to 4 weeks would clean that up but pushes cohort
-formation into November, which is worse: first-seen counts rise again there
-(Black Friday acquisition), and a 4-week lookback would collapse the whole
-cohort study into ~4 cohorts sitting entirely inside that spike, with almost
-no clean horizon left. Phase 3's finding that 41.6% of October's purchasers
+formation into November, which is worse: first-seen counts rise again there,
+including a promotional spike on Nov 15-17, and a 4-week lookback would leave
+only ~4 November cohorts -- one of them acquired during that spike -- with at
+most a 4-week horizon. Phase 3's finding that 41.6% of October's purchasers
 had zero cart activity all month is corroborating evidence the contamination
 is real, not just a curve shape. Decision: keep 2 weeks (6 cohorts, 5-week
 max horizon), and flag cohorts 1-3 explicitly in the Phase 4 retention matrix
-as carrying known residual contamination, rather than trading it for a worse,
-Black-Friday-dominated problem.
+as carrying known residual contamination, rather than trading it for a
+shorter, spike-dominated cohort study. (Corrected: this entry originally
+called the November spike "Black Friday." Daily data shows the spike is
+Nov 15-17; Black Friday, Nov 29, is an ordinary day in this dataset.)
 
 **RESOLVED -- `brand` backfill deferred, not needed.** 19,821 products (9.58%)
 appear both branded and blank -- a genuine capture failure, confirmed

@@ -15,8 +15,9 @@ load_dotenv()
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.getenv("DATA_DIR", REPO_ROOT / "data")).expanduser()
 
-# The two months chosen in Phase 0. Oct+Nov 2019 puts Black Friday inside the
-# window, which is the metric movement Phase 5 decomposes.
+# The only two months the Kaggle dataset ships. November contains a promotional
+# spike on Nov 15-17 (~3x daily events), the main metric movement Phase 5
+# decomposes.
 SOURCE_FILES = ["2019-Oct.csv", "2019-Nov.csv"]
 
 # Cohort lookback: users first seen in this window are treated as pre-existing,

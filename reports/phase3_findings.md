@@ -68,10 +68,19 @@ November is not. Four independent checks confirm this is real:
 Plausible explanation: the dataset begins 2019-10-01 with no prior history
 (same fact behind the Phase 0 lookback decision), so October's no-cart
 purchasers plausibly skew toward habitual repeat customers buying directly.
-November brings Black Friday -- a large influx of exploratory browsing and
-cart-adding without a proportional rise in purchases, which is what flips the
-ratio hard the other way (cart-reach nearly 2.4x its October level while
-purchase-reach barely moves).
+November is dominated by a promotional spike on **Nov 15-17** (Fri-Sun):
+daily events roughly tripled (~2.0M -> 6.2-6.5M) and daily users rose ~70%
+(~285k -> ~488k), then returned to baseline on Nov 18. Those three days -- 10%
+of the month -- hold **43.5% of all November cart events**, at a cart:purchase
+ratio of 5.20. The rest of November still ran at 2.58, roughly double
+October's 1.25, so the spike explains a large share of the flip but not all
+of it. Together they push cart-reach to nearly 2.4x its October level while
+purchase-reach barely moves.
+
+*Correction:* an earlier draft of this section attributed November's surge to
+Black Friday. That was asserted without checking daily data, and it is wrong
+-- Black Friday (Nov 29) is an ordinary day here (286,699 users, 1.85M
+events). The surge is the Nov 15-17 event.
 
 **Self-check, and it's a finding in its own right:** Oct + Nov user totals
 (6,718,407) exceed the whole-window total (5,316,649) by **1,401,758** -- the
