@@ -121,6 +121,20 @@ cohort_sizes AS (
     GROUP BY COHORT_WEEK
 )
 
+SELECT
+    r.cohort_week,
+    r.week_offset,
+    c.cohort_size,
+    COUNT(*) as retained_users,
+    (COUNT(*) / c.cohort_size) as retention_rate
+FROM retained as r
+LEFT JOIN cohort_sizes as c
+    ON r.cohort_week = c.cohort_week
+WHERE DATEADD(day, 7*(week_offset+1), r.cohort_week) <= '2019-12-01'
+GROUP BY r.cohort_week, r.week_offset, c.cohort_size
+ORDER BY r.cohort_week, r.week_offset asc;
+
+
 -- name: repeat_purchase_rate
 -- Decision (d). Of each cohort's purchasers (within their OWN observed
 -- window, per cohort_status = 'included'), what share purchased more than
