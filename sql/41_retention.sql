@@ -51,7 +51,8 @@ WITH events_with_offset AS (
         u.COHORT_WEEK,
         FLOOR(DATEDIFF(day, u.COHORT_WEEK, e.EVENT_TIME) / 7) AS week_offset
     FROM EFA.RAW.EVENTS e
-    JOIN EFA.ANALYTICS.USER_COHORTS u ON e.USER_ID = u.USER_ID
+    JOIN EFA.ANALYTICS.USER_COHORTS u 
+        ON e.USER_ID = u.USER_ID
     WHERE u.COHORT_STATUS = 'included'
 ),
 
@@ -69,10 +70,25 @@ cohort_sizes AS (
     GROUP BY COHORT_WEEK
 )
 
+
 -- your query below: join retained to cohort_sizes, GROUP BY cohort_week,
 -- week_offset to count retained users, apply the masking filter, compute the
 -- rate.
 
+SELECT
+    r.cohort_week,
+    r.week_offset,
+    c.cohort_size,
+    COUNT(*) as retained_users,
+    (COUNT(*) / c.cohort_size) as retention_rate
+FROM retained as r
+LEFT JOIN cohort_sizes as c
+    ON r.cohort_week = c.cohort_week
+WHERE DATEADD(day, 7*(week_offset+1), r.cohort_week) <= '2019-12-01'
+GROUP BY r.cohort_week, r.week_offset, c.cohort_size
+ORDER BY r.cohort_week, r.week_offset asc;
+
+    
 
 -- name: retention_matrix_purchase
 -- Decision (a), secondary metric. Identical structure to retention_matrix,
@@ -80,7 +96,30 @@ cohort_sizes AS (
 -- before computing week_offset. Same masking condition, same cohort_sizes.
 
 -- your query below
+WITH events_with_offset AS (
+    SELECT
+        e.USER_ID,
+        u.COHORT_WEEK,
+        FLOOR(DATEDIFF(day, u.COHORT_WEEK, e.EVENT_TIME) / 7) AS week_offset
+    FROM EFA.RAW.EVENTS e
+    JOIN EFA.ANALYTICS.USER_COHORTS u 
+        ON e.USER_ID = u.USER_ID
+    WHERE e.EVENT_TYPE = 'purchase' AND u.COHORT_STATUS = 'included'
+),
 
+retained AS (
+    -- one row per (user, week_offset) that actually happened -- collapse
+    -- multiple events in the same week to a single "yes" per user, per week.
+    SELECT DISTINCT USER_ID, COHORT_WEEK, week_offset
+    FROM events_with_offset
+),
+
+cohort_sizes AS (
+    SELECT COHORT_WEEK, COUNT(*) AS cohort_size
+    FROM EFA.ANALYTICS.USER_COHORTS
+    WHERE COHORT_STATUS = 'included'
+    GROUP BY COHORT_WEEK
+)
 
 -- name: repeat_purchase_rate
 -- Decision (d). Of each cohort's purchasers (within their OWN observed
