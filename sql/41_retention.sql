@@ -78,7 +78,7 @@ cohort_sizes AS (
 SELECT
     r.cohort_week,
     r.week_offset,
-    c.cohort_size,
+    c.cohort_size,  
     COUNT(*) as retained_users,
     (COUNT(*) / c.cohort_size) as retention_rate
 FROM retained as r
@@ -147,4 +147,25 @@ ORDER BY r.cohort_week, r.week_offset asc;
 -- each cohort's observed-week count, and let the reader see the confound
 -- rather than hiding it.
 
--- your query below
+WITH user_purchases AS (
+    SELECT
+        u.cohort_week,
+        e.user_id,
+        count(distinct e.SESSION_NUM_30) as purchase_sessions
+    FROM EFA.ANALYTICS.EVENTS_SESSIONIZED as e
+    JOIN EFA.ANALYTICS.USER_COHORTS as u
+        ON e.user_id = u.user_id
+    WHERE EVENT_TYPE = 'purchase' and COHORT_STATUS = 'included'
+    GROUP BY u.COHORT_WEEK, e.USER_ID
+)
+
+
+SELECT
+    cohort_week,
+    COUNT(*) as purchasers,
+    COUNT_IF(purchase_sessions > 1) as repeat_purchasers,
+    ( COUNT_IF(purchase_sessions > 1) / COUNT(*)) as repeat_rate,
+    DATEDIFF(day, cohort_week, '2019-12-01') as days_observed
+FROM user_purchases
+GROUP BY cohort_week
+ORDER BY cohort_week;
