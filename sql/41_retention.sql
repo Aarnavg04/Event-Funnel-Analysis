@@ -169,3 +169,37 @@ SELECT
 FROM user_purchases
 GROUP BY cohort_week
 ORDER BY cohort_week;
+
+
+-- name: repeat_purchase_rate_equal_window
+-- Control for the confound flagged above. Same query as repeat_purchase_rate,
+-- with one change: every cohort gets the same 12-day window, measured from its
+-- own cohort_week start. 12 days is what the last cohort (Nov 19) gets before
+-- the data ends, so it is the longest window every cohort can be given.
+-- If repeat rate still falls across cohorts here, it is a loyalty difference.
+-- If it goes flat, the raw decline was the observation window.
+-- Written by Claude (boilerplate variant of the hand-written query above).
+
+WITH user_purchases AS (
+    SELECT
+        u.cohort_week,
+        e.user_id,
+        count(distinct e.SESSION_NUM_30) as purchase_sessions
+    FROM EFA.ANALYTICS.EVENTS_SESSIONIZED as e
+    JOIN EFA.ANALYTICS.USER_COHORTS as u
+        ON e.user_id = u.user_id
+    WHERE EVENT_TYPE = 'purchase' and COHORT_STATUS = 'included'
+        AND e.EVENT_TIME < DATEADD(day, 12, u.cohort_week)
+    GROUP BY u.COHORT_WEEK, e.USER_ID
+)
+
+
+SELECT
+    cohort_week,
+    COUNT(*) as purchasers,
+    COUNT_IF(purchase_sessions > 1) as repeat_purchasers,
+    ( COUNT_IF(purchase_sessions > 1) / COUNT(*)) as repeat_rate,
+    12 as days_observed
+FROM user_purchases
+GROUP BY cohort_week
+ORDER BY cohort_week;

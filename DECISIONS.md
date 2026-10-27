@@ -406,9 +406,47 @@ separate footnote rather than silently dropped.
      reader found these 8,589 sessions themselves and noticed they were never
      mentioned? --> Instead of silently dropping these zero-view sessions, footnoting them allows us to explain this gap and builds the reader's trust. If someone finds 8,589 sessions with real purchase activity and no views that never appear anywhere in my funnel, they will be skeptical to my findings and will wonder if "that's negligible." They will also wonder, "what else did I not account or check for?" Leaving this gap allows the reader to doubt my other results in the report even if they were verifiable and are accurate. The footnote displays how I found these sessions and understood how they are purchased items likely from a deep link or missing tracking event. A silently-dropped 0.046% is faith that it didn't matter. A footnoted 0.046% is verification that it doesn't, which is worth more to my credibility than the number itself.
 
+---
+
+## Phase 4 — Cohorts and retention
+
+<!-- Provenance: 4.1-4.3 answers are my own reasoning (given as interview
+     answers in chat), revised and expanded by Claude at my request to fix
+     gaps and add the supporting numbers. -->
+
+### 4.1 Masking: unobserved cells are not computed
+
+**Decision:** A (cohort, week_offset) cell is computed only if its whole week
+ends on or before 2019-12-01. 21 observable cells (6+5+4+3+2+1). Every week 0
+is 100% under any-event retention.
+
+**What the chart would look like without the mask, and why:**
+The data ends on Nov 30 for every cohort, so newer cohorts run out of observable weeks at an earlier week_offset. Without the mask, two things go wrong. First, each cohort gains one last cell covering only Nov 26–30, 5 of a 7-day week, and its retention looks artificially low even though it's computed from real rows. Second, weeks we never observed have no rows at all, so a chart draws them as blank or zero. The result is a diagonal cliff that hits newer cohorts earliest and hardest: the Nov 19 cohort would look like it collapses right after week 0, and Oct 15 would look like it holds up longest. That reads as "newer customers churn faster," but nothing about behavior changed. Those are weeks we couldn't see, not weeks where users left. The mask fixes this by not computing a cell unless its whole week ends by 2019-12-01, instead of computing it and hiding it later.
+
+---
+
+### 4.2 "Retained" = any event (primary), purchase (secondary)
+
+**Decision:** Any-event retention after week 0 is 14-25%. Purchase retention
+is 1-3%, so about 1 in 10 returners buys. Both are reported.
+
+**What each definition answers, and why any-event leads:**
+If we only reported purchase retention, retention would look roughly ten times weaker: about 1–3% after week 0, against 14–25% for any event, because purchases happen far less often than views. Even week 0 is only 4.7–10.2% under purchase, since most users' first event is a view. Any-event retention shows overall engagement, meaning whether a user comes back to the site and looks at products at all, whether or not they buy. That's why it leads. It's the broader signal, and weekly purchases are too sparse to read cohort trends cleanly. The two definitions answer different questions: any-event asks "are they still coming back?" and purchase asks "are they still paying?" A PM looking only at purchases would see a retention crisis. One looking only at any-event would see healthy engagement. So I report both, because the gap between them is the actual finding. Only about 1 in 10 returning users buys in a given week, so people come back to browse, not to buy.
+
+---
+
+### 4.3 Repeat purchase: distinct sessions, compared over an equal window
+
+**Decision:** Repeat = purchases in more than one distinct 30-min session
+(27.37%, vs 37.75% by rows, 23.58% by days). The raw rate falls 33.36% ->
+19.52% across cohorts; over an equal 12-day window every cohort is
+17.35-19.52%.
+
+**Why the raw decline is not a loyalty decline, and which number proves it:**
+Days observed fall with each cohort (47, 40, 33, 26, 19, 12), and the raw repeat rate falls along with them, from 33.36% to 19.52%. Earlier cohorts simply had more days to make a second purchase. The Nov 19 cohort had only 12 days before the data ended. So the decline comes from how long we watched each cohort, not from loyalty. The proof is the equal-window comparison. When every cohort is measured over the same first 12 days from its cohort start, repeat rates sit between 17.35% and 19.52% with no trend. If newer customers were really less loyal, the decline would still show up there, and it doesn't. As a built-in check, the Nov 19 cohort comes out at 19.52% in both versions, because its full window already is 12 days. The limit: 12 days is the longest window every cohort can share, so this can't tell us whether loyalty diverges after day 12. It's the same trap as forgetting to mask in 4.1, confusing "we watched them less" with "they did less."
+
 ## Open questions
 
-<!-- Anything I noticed but have not resolved. Phase 1 will add to this. -->
 
 **RESOLVED -- two-week lookback stays at 2 weeks, not extended.** Per-day
 first-seen users decline monotonically through October -- 141,952, 107,732,
