@@ -448,8 +448,6 @@ Days observed fall with each cohort (47, 40, 33, 26, 19, 12), and the raw repeat
 
 ## Phase 5 — Mix shift vs rate change
 
-<!-- Provenance: 5.1-5.3 answers are built from my own answers in chat,
-     revised and expanded by Claude at my request. -->
 
 ### 5.1 Metric, segment, and baseline
 

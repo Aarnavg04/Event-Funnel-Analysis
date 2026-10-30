@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -99,3 +100,25 @@ def run(conn, sql: str, params: tuple | None = None) -> list[tuple]:
     with conn.cursor() as cur:
         cur.execute(sql, params)
         return cur.fetchall()
+
+
+def fetch(conn, sql: str) -> tuple[list[str], list[tuple]]:
+    """Execute one statement and return (lowercased column names, rows)."""
+    with conn.cursor() as cur:
+        cur.execute(sql)
+        return [d[0].lower() for d in cur.description], cur.fetchall()
+
+
+def named_queries(path: Path) -> dict[str, str]:
+    """Parse a .sql file into {name: sql} on "-- name:" markers.
+
+    Everything before the first marker is the file header and is skipped.
+    """
+    text = path.read_text()
+    blocks = re.split(r"^-- name:\s*(\w+)\s*$", text, flags=re.MULTILINE)
+    out = {}
+    for name, body in zip(blocks[1::2], blocks[2::2]):
+        sql = body.strip().rstrip(";").strip()
+        if sql:
+            out[name] = sql
+    return out

@@ -17,12 +17,11 @@ one copy of each and it is the readable one.
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 import time
 from pathlib import Path
 
-from config import REPO_ROOT, connect, run
+from config import REPO_ROOT, connect, fetch, named_queries, run
 
 REPORT = REPO_ROOT / "reports" / "phase1_profile.md"
 
@@ -32,25 +31,6 @@ KNOWN = {
     "null_brand": 15_331_243,
     "null_category_code": 35_413_780,
 }
-
-
-def load_queries() -> dict[str, str]:
-    """Parse sql/10_profile.sql into {name: sql}."""
-    text = (REPO_ROOT / "sql" / "10_profile.sql").read_text()
-    blocks = re.split(r"^-- name:\s*(\w+)\s*$", text, flags=re.MULTILINE)
-    # blocks[0] is the file header before the first marker
-    out = {}
-    for name, body in zip(blocks[1::2], blocks[2::2]):
-        sql = body.strip().rstrip(";").strip()
-        if sql:
-            out[name] = sql
-    return out
-
-
-def fetch(conn, sql: str) -> tuple[list[str], list[tuple]]:
-    with conn.cursor() as cur:
-        cur.execute(sql)
-        return [d[0].lower() for d in cur.description], cur.fetchall()
 
 
 def fmt(v) -> str:
@@ -100,7 +80,7 @@ def main() -> None:
     ap.add_argument("--only", help="comma-separated query names to run")
     args = ap.parse_args()
 
-    queries = load_queries()
+    queries = named_queries(REPO_ROOT / "sql" / "10_profile.sql")
     if args.only:
         wanted = [n.strip() for n in args.only.split(",")]
         missing = [n for n in wanted if n not in queries]

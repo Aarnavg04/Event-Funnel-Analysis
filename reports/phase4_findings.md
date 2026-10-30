@@ -65,10 +65,16 @@ earliest offset, so the chart shows a diagonal cliff that looks like "newer
 customers churn faster" when it is really "we couldn't see them."
 
 **Read the matrix by diagonal, not only by row.** Retention does not decay
-smoothly. Every cohort peaks in the cell that falls in the **Nov 12–18
-calendar week** and drops in Nov 19–25. That is the Nov 15–17 promotional
-spike pulling people back on a calendar date, not cohort aging. Rows mix
-"time since joining" with "what was happening that week."
+smoothly. For the four oldest cohorts, the lowest later week is the same
+calendar week, **Nov 19–25** (15.14 / 13.85 / 14.24 / 15.33%), the week right
+after the Nov 15–17 promotional spike. The Nov 12–18 cells sit at or near
+each row's high (21.85 for Oct 15, 24.53 for Nov 5, the highest week-1 value
+of any cohort), though not every row peaks there: Oct 22's best is week 1.
+This is a calendar effect, not cohort aging. Rows mix "time since joining"
+with "what was happening that week."
+
+*Correction:* an earlier version said every cohort peaks in Nov 12–18. That
+overstated it; the consistent pattern is the Nov 19–25 drop.
 
 ---
 

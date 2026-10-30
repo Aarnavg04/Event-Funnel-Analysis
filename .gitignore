@@ -6,10 +6,12 @@ rsa_key*
 kaggle.json
 
 # Data — 9 GB of CSV does not belong in git
-data/
+/data/
 *.csv
 *.csv.gz
 *.zip
+# ...except the small query results run_all.py writes for plots.py
+!reports/data/*.csv
 
 # Python
 __pycache__/

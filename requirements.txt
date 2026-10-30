@@ -2,3 +2,4 @@ snowflake-connector-python==3.12.3
 cryptography==43.0.1
 python-dotenv==1.0.1
 kaggle==1.6.17
+matplotlib==3.9.2
