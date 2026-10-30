@@ -411,8 +411,7 @@ separate footnote rather than silently dropped.
 ## Phase 4 — Cohorts and retention
 
 <!-- Provenance: 4.1-4.3 answers are my own reasoning (given as interview
-     answers in chat), revised and expanded by Claude at my request to fix
-     gaps and add the supporting numbers. -->
+     answers in chat) -->
 
 ### 4.1 Masking: unobserved cells are not computed
 
@@ -444,6 +443,44 @@ If we only reported purchase retention, retention would look roughly ten times w
 
 **Why the raw decline is not a loyalty decline, and which number proves it:**
 Days observed fall with each cohort (47, 40, 33, 26, 19, 12), and the raw repeat rate falls along with them, from 33.36% to 19.52%. Earlier cohorts simply had more days to make a second purchase. The Nov 19 cohort had only 12 days before the data ended. So the decline comes from how long we watched each cohort, not from loyalty. The proof is the equal-window comparison. When every cohort is measured over the same first 12 days from its cohort start, repeat rates sit between 17.35% and 19.52% with no trend. If newer customers were really less loyal, the decline would still show up there, and it doesn't. As a built-in check, the Nov 19 cohort comes out at 19.52% in both versions, because its full window already is 12 days. The limit: 12 days is the longest window every cohort can share, so this can't tell us whether loyalty diverges after day 12. It's the same trap as forgetting to mask in 4.1, confusing "we watched them less" with "they did less."
+
+---
+
+## Phase 5 — Mix shift vs rate change
+
+<!-- Provenance: 5.1-5.3 answers are built from my own answers in chat,
+     revised and expanded by Claude at my request. -->
+
+### 5.1 Metric, segment, and baseline
+
+**Decision:** Cart -> purchase rate at (session, top-level category) grain;
+segmented by top-level category (14 values, all present in both months);
+October as baseline. Oct 52.95% -> Nov 38.87%, -14.08 pts.
+
+**Why this metric, why category and not spike days, and why October:**
+The metric is the session-level cart → purchase rate: of the (session, category) pairs that added to cart, the share that also purchased in that category. It's where October and November diverged most in Phase 3 (event-level cart:purchase went from 1.25:1 to 3.30:1), so it's the metric with the most to explain. I segmented by top-level category because a segment has to exist in both months, and both its rate and its share of carts must be able to change. Category fits: all 14 have carts in both months, conversion differs between them, and the Nov 15–17 spike could have shifted which categories people carted. I couldn't segment by spike days vs. normal days, because October has no spike days. There's no October rate for that segment to compare against, so the decomposition breaks. Instead, I checked the spike separately (5.3). October is the baseline because it's the "before" period, and the question is how much each factor changed starting from where we were. That's a convention, not something the data decides. The other choices are checked in 5.2.
+
+---
+
+### 5.2 Result: mostly rate change, robust to the baseline
+
+**Decision:** Mix -2.99, rate -11.94, interaction +0.86 (sums to -14.08 exactly).
+Across all baseline conventions, mix is -2.1 to -3.0 and rate -11.1 to -11.9.
+Every category's rate fell; electronics alone is -9.12 of the rate effect.
+
+**What this says, and how you checked it isn't an artifact of the method:**
+The overall rate is each category's share times its rate, added up. Between October and November both ingredients changed, so I changed one at a time while holding the other at October's value. Mix = new shares at old rates. Rate = old shares at new rates. Interaction = the leftover from both moving at once, which corrects the double count. For electronics: its share fell from 70.9% to 48.7% (mix −12.51) and its rate from 56.2% to 43.4% (rate −9.12). Those overshoot its real −18.77 drop, so the interaction is +2.86. Summed over all 14 categories, the result is mostly rate: −11.94 of −14.08 points. Every single category converted worse in November. The check is that the three parts must add up exactly to Nov overall minus Oct overall, which was computed separately from raw counts. They do, to the hundredth, and if any formula were wrong they wouldn't. If I used November as the baseline instead, the split moves by under a point (mix −2.1 to −3.0, rate −11.1 to −11.9), but rate is 80–85% of the drop either way, so the baseline choice doesn't change the conclusion. One trap: the raw per-category mix terms only mean something summed. Uncategorized shows +6.67, which looks like its growth helped. But it converts below the October average (42% vs. 52.95%), so its growth actually hurt. Because shares always sum to 1, a single row only reads correctly when measured against the average: uncategorized becomes −1.67, and it's the biggest mix contributor.
+
+---
+
+### 5.3 "Rate change" isn't "checkout got worse"
+
+**Decision:** Nov 15-17 carts converted at 27.33% vs 46.80% for the rest of
+November. Removing the spike recovers 7.93 of the 14.08 points.
+
+**Why a category decomposition labels the spike as rate change, and what's
+left over:**
+Not necessarily. Much of the rate drop comes from the Nov 15–17 promotional spike, not Black Friday (Nov 29 is an ordinary day here). Spike-day cart pairs were 41% of November's carts and converted at 27.33%, compared with 46.80% for the rest of November. Those shoppers carted heavily in every category, so they lowered each category's rate, and a category-level decomposition counts that as rate change. It's really a shift in who was shopping, low-intent promo traffic, along a dimension I didn't segment by. That's the general failure mode: a mix shift along an unmeasured dimension always shows up as rate change, so the honest conclusion is "mostly rate within category," not "mostly rate." Removing the spike recovers 7.93 of the 14.08 points. The remaining ~6 points (52.95% → 46.80%) aren't explained by the spike or by category mix. That's the part that could be a real conversion problem, and this dataset can't say what caused it.
 
 ## Open questions
 
