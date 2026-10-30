@@ -16,7 +16,7 @@ belongs next to every rate below.
 | | count | rate |
 |---|---|---|
 | sessions with >=1 view (base) | 18,747,465 | -- |
-| reached cart | 2,036,753 | 10.87% |
+| reached cart | 2,036,753 | 10.86% |
 | reached purchase | 1,286,051 | 6.86% |
 | single-event sessions (of base) | 5,525,909 | 29.48% |
 
